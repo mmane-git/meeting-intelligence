@@ -1,121 +1,182 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
+import { useEffect, useState } from 'react'
+import { supabase } from './lib/supabaseClient'
 import './App.css'
 
 function App() {
-  const [count, setCount] = useState(0)
+  const [session, setSession] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session)
+      setLoading(false)
+    })
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session)
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
+
+  if (loading) {
+    return <div className="app">Loading...</div>
+  }
+
+  if (!session) {
+    return <Auth />
+  }
+
+  return <Dashboard session={session} />
+}
+
+function Auth() {
+  const [isLogin, setIsLogin] = useState(true)
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [message, setMessage] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  async function handleSubmit(event) {
+    event.preventDefault()
+    setMessage('')
+    setLoading(true)
+
+    if (isLogin) {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
+
+      if (error) {
+        setMessage(error.message)
+      }
+    } else {
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+      })
+
+      if (error) {
+        setMessage(error.message)
+      } else {
+        setMessage(
+          'Account created. Check your email if email confirmation is required.'
+        )
+      }
+    }
+
+    setLoading(false)
+  }
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
+    <main className="auth-page">
+      <div className="auth-card">
+        <div className="brand">
+          <span className="brand-dot" />
+          <h1>Meeting Intelligence</h1>
         </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
+
+        <p className="subtitle">
+          Real-time intelligence. User-controlled memory.
+        </p>
+
+        <h2>{isLogin ? 'Welcome back' : 'Create your account'}</h2>
+
+        <form onSubmit={handleSubmit}>
+          <label>Email</label>
+          <input
+            type="email"
+            placeholder="you@example.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
+
+          <label>Password</label>
+          <input
+            type="password"
+            placeholder="Enter your password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            minLength={6}
+            required
+          />
+
+          <button type="submit" disabled={loading}>
+            {loading
+              ? 'Please wait...'
+              : isLogin
+                ? 'Sign in'
+                : 'Create account'}
+          </button>
+        </form>
+
+        {message && <p className="message">{message}</p>}
+
         <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
+          className="switch-button"
+          onClick={() => {
+            setIsLogin(!isLogin)
+            setMessage('')
+          }}
         >
-          Count is {count}
+          {isLogin
+            ? "Don't have an account? Create one"
+            : 'Already have an account? Sign in'}
         </button>
+      </div>
+    </main>
+  )
+}
+
+function Dashboard({ session }) {
+  async function handleLogout() {
+    await supabase.auth.signOut()
+  }
+
+  return (
+    <main className="dashboard">
+      <header className="dashboard-header">
+        <div>
+          <p className="eyebrow">MEETING INTELLIGENCE</p>
+          <h1>Your workspace</h1>
+        </div>
+
+        <button onClick={handleLogout}>Log out</button>
+      </header>
+
+      <section className="welcome-card">
+        <p>Authenticated as</p>
+        <h2>{session.user.email}</h2>
+        <p>
+          Your meeting intelligence workspace is ready. Meeting creation,
+          live assistance and privacy-controlled memory are coming next.
+        </p>
       </section>
 
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
+      <section className="feature-grid">
+        <div className="feature-card">
+          <span>01</span>
+          <h3>Create meeting</h3>
+          <p>Start a secure meeting session.</p>
         </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
+
+        <div className="feature-card">
+          <span>02</span>
+          <h3>Join meeting</h3>
+          <p>Join a meeting using its session ID.</p>
+        </div>
+
+        <div className="feature-card">
+          <span>03</span>
+          <h3>Meeting memory</h3>
+          <p>Control what your assistant remembers.</p>
         </div>
       </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+    </main>
   )
 }
 
