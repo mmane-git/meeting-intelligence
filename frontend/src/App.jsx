@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react'
 import { supabase } from './lib/supabaseClient'
+import {
+  createMeeting,
+  getMyMeetings,
+  joinMeeting,
+} from './lib/meetingService'
+import MeetingRoom from './components/MeetingRoom'
 import './App.css'
 
 function App() {
@@ -14,8 +20,8 @@ function App() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session)
+    } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      setSession(newSession)
     })
 
     return () => subscription.unsubscribe()
@@ -63,7 +69,7 @@ function Auth() {
         setMessage(error.message)
       } else {
         setMessage(
-          'Account created. Check your email if email confirmation is required.'
+          'Account created. Check your email if confirmation is required.'
         )
       }
     }
@@ -87,20 +93,22 @@ function Auth() {
 
         <form onSubmit={handleSubmit}>
           <label>Email</label>
+
           <input
             type="email"
             placeholder="you@example.com"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(event) => setEmail(event.target.value)}
             required
           />
 
           <label>Password</label>
+
           <input
             type="password"
             placeholder="Enter your password"
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={(event) => setPassword(event.target.value)}
             minLength={6}
             required
           />
@@ -119,7 +127,7 @@ function Auth() {
         <button
           className="switch-button"
           onClick={() => {
-            setIsLogin(!isLogin)
+            setIsLogin((current) => !current)
             setMessage('')
           }}
         >
@@ -133,8 +141,60 @@ function Auth() {
 }
 
 function Dashboard({ session }) {
+  const [meetings, setMeetings] = useState([])
+  const [showCreate, setShowCreate] = useState(false)
+  const [showJoin, setShowJoin] = useState(false)
+  const [selectedMeeting, setSelectedMeeting] = useState(null)
+  const [activeMeeting, setActiveMeeting] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [message, setMessage] = useState('')
+
+  async function loadMeetings() {
+    try {
+      const data = await getMyMeetings()
+      setMeetings(data)
+    } catch (error) {
+      setMessage(error.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadMeetings()
+  }, [])
+
   async function handleLogout() {
     await supabase.auth.signOut()
+  }
+
+  function handleCreated(meeting) {
+    setShowCreate(false)
+    setMeetings((current) => [meeting, ...current])
+    setSelectedMeeting(meeting)
+  }
+
+  function handleJoined(meeting) {
+    setShowJoin(false)
+    setSelectedMeeting(meeting)
+  }
+
+  function enterMeeting(meeting) {
+    setSelectedMeeting(null)
+    setActiveMeeting(meeting)
+  }
+
+  if (activeMeeting) {
+    return (
+      <MeetingRoom
+        meeting={activeMeeting}
+        session={session}
+        onExit={() => {
+          setActiveMeeting(null)
+          loadMeetings()
+        }}
+      />
+    )
   }
 
   return (
@@ -148,35 +208,352 @@ function Dashboard({ session }) {
         <button onClick={handleLogout}>Log out</button>
       </header>
 
-      <section className="welcome-card">
-        <p>Authenticated as</p>
-        <h2>{session.user.email}</h2>
-        <p>
-          Your meeting intelligence workspace is ready. Meeting creation,
-          live assistance and privacy-controlled memory are coming next.
-        </p>
+      <section className="hero-card">
+        <div>
+          <p className="hero-label">WELCOME BACK</p>
+
+          <h2>{session.user.email}</h2>
+
+          <p>
+            Start a meeting, invite others, and let the intelligence
+            layer assist without automatically remembering everything.
+          </p>
+        </div>
       </section>
 
-      <section className="feature-grid">
-        <div className="feature-card">
+      {message && <p className="message">{message}</p>}
+
+      <section className="action-grid">
+        <button
+          className="action-card"
+          onClick={() => setShowCreate(true)}
+        >
           <span>01</span>
+
           <h3>Create meeting</h3>
-          <p>Start a secure meeting session.</p>
-        </div>
 
-        <div className="feature-card">
+          <p>
+            Start a new secure meeting session.
+          </p>
+        </button>
+
+        <button
+          className="action-card"
+          onClick={() => setShowJoin(true)}
+        >
           <span>02</span>
-          <h3>Join meeting</h3>
-          <p>Join a meeting using its session ID.</p>
-        </div>
 
-        <div className="feature-card">
+          <h3>Join meeting</h3>
+
+          <p>
+            Enter a meeting code and join.
+          </p>
+        </button>
+
+        <div className="action-card">
           <span>03</span>
+
           <h3>Meeting memory</h3>
-          <p>Control what your assistant remembers.</p>
+
+          <p>
+            Control what your assistant remembers.
+          </p>
         </div>
       </section>
+
+      <section className="meetings-section">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">YOUR MEETINGS</p>
+
+            <h2>Meeting history</h2>
+          </div>
+        </div>
+
+        {loading ? (
+          <p className="muted">
+            Loading meetings...
+          </p>
+        ) : meetings.length === 0 ? (
+          <div className="empty-state">
+            <h3>No meetings yet</h3>
+
+            <p>
+              Create your first meeting to begin.
+            </p>
+          </div>
+        ) : (
+          <div className="meeting-list">
+            {meetings.map((meeting) => (
+              <button
+                className="meeting-row"
+                key={meeting.id}
+                onClick={() => setSelectedMeeting(meeting)}
+              >
+                <div>
+                  <strong>{meeting.title}</strong>
+
+                  <span>
+                    {meeting.meeting_code}
+                  </span>
+                </div>
+
+                <div className="meeting-meta">
+                  <span>
+                    {meeting.memory_mode}
+                  </span>
+
+                  <span>
+                    {meeting.status}
+                  </span>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {showCreate && (
+        <CreateMeetingModal
+          onClose={() => setShowCreate(false)}
+          onCreated={handleCreated}
+        />
+      )}
+
+      {showJoin && (
+        <JoinMeetingModal
+          onClose={() => setShowJoin(false)}
+          onJoined={handleJoined}
+        />
+      )}
+
+      {selectedMeeting && (
+        <MeetingDetailsModal
+          meeting={selectedMeeting}
+          onClose={() => setSelectedMeeting(null)}
+          onEnter={() => enterMeeting(selectedMeeting)}
+        />
+      )}
     </main>
+  )
+}
+
+function CreateMeetingModal({ onClose, onCreated }) {
+  const [title, setTitle] = useState('')
+  const [memoryMode, setMemoryMode] = useState('private')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  async function handleCreate(event) {
+    event.preventDefault()
+
+    setError('')
+    setLoading(true)
+
+    try {
+      const meeting = await createMeeting(
+        title,
+        memoryMode
+      )
+
+      onCreated(meeting)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <Modal
+      title="Create meeting"
+      onClose={onClose}
+    >
+      <form onSubmit={handleCreate}>
+        <label>Meeting title</label>
+
+        <input
+          value={title}
+          onChange={(event) =>
+            setTitle(event.target.value)
+          }
+          placeholder="e.g. Project planning"
+          required
+        />
+
+        <label>Memory mode</label>
+
+        <select
+          value={memoryMode}
+          onChange={(event) =>
+            setMemoryMode(event.target.value)
+          }
+        >
+          <option value="ephemeral">
+            Ephemeral — don't retain after meeting
+          </option>
+
+          <option value="private">
+            Private — encrypted persistent memory
+          </option>
+
+          <option value="persistent">
+            Persistent — save meeting intelligence
+          </option>
+        </select>
+
+        {error && (
+          <p className="error">{error}</p>
+        )}
+
+        <button
+          className="primary-button"
+          disabled={loading}
+        >
+          {loading
+            ? 'Creating...'
+            : 'Create meeting'}
+        </button>
+      </form>
+    </Modal>
+  )
+}
+
+function JoinMeetingModal({ onClose, onJoined }) {
+  const [code, setCode] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  async function handleJoin(event) {
+    event.preventDefault()
+
+    setError('')
+    setLoading(true)
+
+    try {
+      const meeting = await joinMeeting(code)
+
+      onJoined(meeting)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <Modal
+      title="Join meeting"
+      onClose={onClose}
+    >
+      <form onSubmit={handleJoin}>
+        <label>Meeting code</label>
+
+        <input
+          value={code}
+          onChange={(event) =>
+            setCode(
+              event.target.value.toUpperCase()
+            )
+          }
+          placeholder="XXXXXXXX"
+          maxLength={8}
+          required
+        />
+
+        {error && (
+          <p className="error">{error}</p>
+        )}
+
+        <button
+          className="primary-button"
+          disabled={loading}
+        >
+          {loading
+            ? 'Joining...'
+            : 'Join meeting'}
+        </button>
+      </form>
+    </Modal>
+  )
+}
+
+function MeetingDetailsModal({
+  meeting,
+  onClose,
+  onEnter,
+}) {
+  return (
+    <Modal
+      title={meeting.title}
+      onClose={onClose}
+    >
+      <div className="meeting-details">
+        <div>
+          <span>Meeting code</span>
+
+          <strong>
+            {meeting.meeting_code}
+          </strong>
+        </div>
+
+        <div>
+          <span>Status</span>
+
+          <strong>
+            {meeting.status}
+          </strong>
+        </div>
+
+        <div>
+          <span>Memory mode</span>
+
+          <strong>
+            {meeting.memory_mode}
+          </strong>
+        </div>
+      </div>
+
+      <button
+        className="primary-button"
+        onClick={onEnter}
+      >
+        Enter meeting
+      </button>
+    </Modal>
+  )
+}
+
+function Modal({
+  title,
+  onClose,
+  children,
+}) {
+  return (
+    <div
+      className="modal-backdrop"
+      onMouseDown={onClose}
+    >
+      <div
+        className="modal"
+        onMouseDown={(event) =>
+          event.stopPropagation()
+        }
+      >
+        <div className="modal-header">
+          <h2>{title}</h2>
+
+          <button
+            className="close-button"
+            onClick={onClose}
+          >
+            ×
+          </button>
+        </div>
+
+        {children}
+      </div>
+    </div>
   )
 }
 
